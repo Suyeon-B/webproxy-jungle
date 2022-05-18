@@ -13,10 +13,17 @@ all: proxy
 csapp.o: csapp.c csapp.h
 	$(CC) $(CFLAGS) -c csapp.c
 
+# cache.o: cache.c cache.h
+# 	$(CC) $(CFLAGS) -c cache.c
+
 proxy.o: proxy.c csapp.h
 	$(CC) $(CFLAGS) -c proxy.c
 
-proxy: proxy.o csapp.o
+
+# proxy: proxy.o cache.o csapp.o 
+# 	$(CC) $(CFLAGS) proxy.o cache.o csapp.o -o proxy $(LDFLAGS)
+
+proxy: proxy.o csapp.o 
 	$(CC) $(CFLAGS) proxy.o csapp.o -o proxy $(LDFLAGS)
 
 # Creates a tarball in ../proxylab-handin.tar that you can then
@@ -26,4 +33,3 @@ handin:
 
 clean:
 	rm -f *~ *.o proxy core *.tar *.zip *.gzip *.bzip *.gz
-
