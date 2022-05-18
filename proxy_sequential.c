@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include "csapp.h"
 
-/* Part I: Implementing a sequential web proxy */
+/* 
+ * < proxy_sequential.c >
+ * Proxy Lab - Part I: Implementing a sequential web proxy 
+ */
+
 
 // #define CONCURRENT                             // 주석 처리시 sequential proxy
 // #define DEBUG                                  // 주석 처리시 debug X

@@ -2,9 +2,6 @@
 /*
  * tiny.c - A simple, iterative HTTP/1.0 Web server that uses the
  *     GET method to serve static and dynamic content.
- *
- * Updated 11/2019 droh
- *   - Fixed sprintf() aliasing issue in serve_static(), and clienterror().
  */
 #include "csapp.h"
 
@@ -17,6 +14,8 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg);
 
+
+/* -------------routine------------*/
 int main(int argc, char **argv)
 {
     int listenfd, connfd;
@@ -24,23 +23,32 @@ int main(int argc, char **argv)
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
 
-    /* Check command line args */
-    if (argc != 2)
+  /* 
+   * 들어온 인자 개수가 적절하지 않으면 
+   * 에러 메세지와 함께 사용 가이드를 출력 
+   */    
+  if (argc != 2)
     {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(1);
     }
 
+    /* listen_fd 생성 */
+    /* listenfd 식별자는 0, 1, 2 다음으로 최초로 생성되므로, 3! */
     listenfd = Open_listenfd(argv[1]);
+
+    /* 무한 loop 돌면서 client의 connection request 대기 */
     while (1)
     {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // line:netp:tiny:accept
+        /* accept */
+        /* connfd 식별자는 0, 1, 2, 3(listenfd) 다음에 생성되므로, 4! */
+        connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE,
                     port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);  // line:netp:tiny:doit
-        Close(connfd); // line:netp:tiny:close
+        doit(connfd);  
+        Close(connfd); 
     }
 }
 /* $end tinymain */
@@ -59,30 +67,25 @@ void doit(int fd)
 
     /* Read request line and headers */
     Rio_readinitb(&rio, fd);
-    if (!Rio_readlineb(&rio, buf, MAXLINE)) // line:netp:doit:readrequest
+    if (!Rio_readlineb(&rio, buf, MAXLINE)) 
         return;
     printf("%s", buf);
-    sscanf(buf, "%s %s %s", method, uri, version); // line:netp:doit:parserequest
-    // if (strcasecmp(method, "GET"))
-    // { // line:netp:doit:beginrequesterr
-    //     clienterror(fd, method, "501", "Not Implemented",
-    //                 "Tiny does not implement this method");
-    //     return;
-    // }
-    // 요청 method가 GET과 HEAD가 아니면 종료. main으로 가서 연결 닫고 다음 요청 기다림.
+    sscanf(buf, "%s %s %s", method, uri, version); 
+
+    /* 요청 method가 GET과 HEAD가 아니면 종료. main으로 가서 연결 닫고 다음 요청 기다림. */
     if (!(strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0))
-    { // method 스트링이 GET이 아니면 0이 아닌 값이 나옴
+    { 
+        /* method 스트링이 GET or HEAD가 아니면 0이 아닌 값이 나옴 */
         clienterror(fd, method, "501", "Not implemented",
                     "Tiny does not implement this method");
         return;
     }
-    // line:netp:doit:endrequesterr
-    read_requesthdrs(&rio); // line:netp:doit:readrequesthdrs
+    read_requesthdrs(&rio);
 
     /* Parse URI from GET request */
-    is_static = parse_uri(uri, filename, cgiargs); // line:netp:doit:staticcheck
+    is_static = parse_uri(uri, filename, cgiargs);
     if (stat(filename, &sbuf) < 0)
-    { // line:netp:doit:beginnotfound
+    { 
         clienterror(fd, filename, "404", "Not found",
                     "Tiny couldn't find this file");
         return;
@@ -90,7 +93,8 @@ void doit(int fd)
 
     /* 컨텐츠의 유형(정적, 동적)을 파악한 후 각각의 서버에 보낸다. */
     if (is_static)
-    { /* Serve static content */
+    { 
+        /* 정적 파일일 경우 */
         // !(일반 파일이다) or !(읽기 권한이 있다)
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode))
         {
@@ -103,7 +107,8 @@ void doit(int fd)
         serve_static(fd, filename, sbuf.st_size, method);
     }
     else
-    { /* Serve dynamic content */
+    { 
+        /* 동적 파일일 경우 */
         // !(일반 파일이다) or !(실행 권한이 있다)
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode))
         {
@@ -129,7 +134,8 @@ void read_requesthdrs(rio_t *rp)
     Rio_readlineb(rp, buf, MAXLINE);
     printf("%s", buf);
     while (strcmp(buf, "\r\n"))
-    { // line:netp:readhdrs:checkterm
+    { 
+        /* EOF까지 read */
         Rio_readlineb(rp, buf, MAXLINE);
         printf("%s", buf);
     }
@@ -147,26 +153,26 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
     char *ptr;
 
     if (!strstr(uri, "cgi-bin"))
-    { /* Static content */                 // line:netp:parseuri:isstatic
-        strcpy(cgiargs, "");               // line:netp:parseuri:clearcgi
-        strcpy(filename, ".");             // line:netp:parseuri:beginconvert1
-        strcat(filename, uri);             // line:netp:parseuri:endconvert1
-        if (uri[strlen(uri) - 1] == '/')   // line:netp:parseuri:slashcheck
-            strcat(filename, "home.html"); // line:netp:parseuri:appenddefault
+    { /* 정적 파일일 때 */                 
+        strcpy(cgiargs, "");               
+        strcpy(filename, ".");             
+        strcat(filename, uri);             
+        if (uri[strlen(uri) - 1] == '/')   
+            strcat(filename, "home.html"); 
         return 1;
     }
     else
-    { /* Dynamic content */    // line:netp:parseuri:isdynamic
-        ptr = index(uri, '?'); // line:netp:parseuri:beginextract
+    { /* 동적 파일일 때 */    
+        ptr = index(uri, '?'); 
         if (ptr)
         {
             strcpy(cgiargs, ptr + 1);
             *ptr = '\0';
         }
         else
-            strcpy(cgiargs, ""); // line:netp:parseuri:endextract
-        strcpy(filename, ".");   // line:netp:parseuri:beginconvert2
-        strcat(filename, uri);   // line:netp:parseuri:endconvert2
+            strcpy(cgiargs, ""); 
+        strcpy(filename, ".");   
+        strcat(filename, uri);  
         return 0;
     }
 }
@@ -174,9 +180,9 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
 
 /*
  * serve_static - copy a file back to the client
+ * mmap & rio_readn 사용 ver.
  */
 /* $begin serve_static */
-// mmap & rio_readn
 // void serve_static(int fd, char *filename, int filesize)
 // {
 //     int srcfd;
@@ -201,7 +207,11 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
 //     Munmap(srcp, filesize);             //line:netp:servestatic:munmap
 // }
 
-// malloc & rio_readn & rio_writen
+
+/*
+ * serve_static - copy a file back to the client
+ * malloc & rio_readn & rio_writen 사용 ver.
+ */
 void serve_static(int fd, char *filename, int filesize, char *method)
 {
     int srcfd;
@@ -271,16 +281,17 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method)
     Rio_writen(fd, buf, strlen(buf));
 
     if (Fork() == 0)
-    { /* Child */ // line:netp:servedynamic:fork
+    { 
+        /* Child */ 
         /* Real server would set all CGI vars here */
-        setenv("QUERY_STRING", cgiargs, 1); // line:netp:servedynamic:setenv
+        setenv("QUERY_STRING", cgiargs, 1); 
         /* 요청 메서드를 환경변수에 추가한다. */
         setenv("REQUEST_METHOD", method, 1);
 
-        Dup2(fd, STDOUT_FILENO); /* Redirect stdout to client */    // line:netp:servedynamic:dup2
-        Execve(filename, emptylist, environ); /* Run CGI program */ // line:netp:servedynamic:execve
+        Dup2(fd, STDOUT_FILENO);                         /* Redirect stdout to client */    
+        Execve(filename, emptylist, environ);            /* Run CGI program */
     }
-    Wait(NULL); /* Parent waits for and reaps child */ // line:netp:servedynamic:wait
+    Wait(NULL);                                          /* Parent waits for and reaps child */ 
 }
 /* $end serve_dynamic */
 

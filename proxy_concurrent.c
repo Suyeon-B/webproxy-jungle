@@ -1,14 +1,18 @@
 #include <stdio.h>
 #include "csapp.h"
 
-/* Part I: Implementing a sequential web proxy */
+/* 
+ * < proxy_concurrent.c >
+ * Proxy Lab - Part II: Dealing with multiple concurrent requests
+ */
 
-// #define CONCURRENT                             // 주석 처리시 sequential proxy
+
+#define CONCURRENT                                // 주석 처리시 sequential proxy
 // #define DEBUG                                  // 주석 처리시 debug X
 
-/* C언어 전처리기 활용 debug printf */
-#ifndef DEBUG                                 // ifndef = if not define. 즉, DEBUG가 정의되어 있지 않다면
-#define debug_printf(...) \
+/* C언어 전처리기 활용 debug */
+#ifndef DEBUG // ifndef = if not define. 즉, DEBUG가 정의되어 있지 않다면
+#define debug_printf(...) \                   
      {}                                       // debug_printf 부분이 출력되지 않도록 한다. "\(backslash)"는 줄바꿈의 의미
 #else                                         // DEBUG가 정의되어 있다면,
 #define debug_printf(...) printf(__VA_ARGS__) // debug_printf 부분이 출력되도록 한다.
@@ -64,6 +68,7 @@ int main(int argc, char **argv)
   socklen_t clientlen;
   char hostname[MAXLINE], port[MAXLINE];
   struct sockaddr_in clientaddr;
+  pthread_t tid; /* 멀티 쓰레드용 */
   int *connfdp;
 
   /* 
@@ -81,7 +86,7 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  /* client [connfd] --------> [listenfd] proxy server */
+  /* client --------> proxy server (listenfd, connfd) */
   /* listen_fd 생성 */
   /* listenfd 식별자는 0, 1, 2 다음으로 최초로 생성되므로, 3! */
   listenfd = open_listenfd(argv[1]);
@@ -91,7 +96,6 @@ int main(int argc, char **argv)
   {
     clientlen = sizeof(clientaddr);
     /* accept */
-    /* connfd 식별자는 0, 1, 2, 3(listenfd) 다음에 생성되므로, 4! */
     connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);
     if (connfd < 0)
       continue; /* accept가 error 시 -1 리턴하므로 */
@@ -110,8 +114,13 @@ int main(int argc, char **argv)
     Close(connfd);
 /* Part II: Dealing with multiple concurrent requests */
 #else
-    debug_printf("New Thread\n");
+    debug_printf("New Thread\n"); /* ifndef */
     printf("Accepted new connection from (%s, %s)\n", hostname, port);
+
+    /* 
+     * 스레드 생성 & concurrent proxy server start
+     * 부모 프로세스는 while문 돌며 connection request 계속 받음
+     */
     connfdp = malloc(sizeof(int));
     *connfdp = connfd;
     if (0 != pthread_create(&tid, NULL, proxy_thread, connfdp))
@@ -124,14 +133,15 @@ int main(int argc, char **argv)
   return 0;
 }
 
-/* 
- * client <-> proxy server <-> end server
- * 전반적인 프록시 서버 기능 메인 함수
- */
 void proxy(int connfd)
 {
-  rio_t fromcli_rio;
+  rio_t fromcli_rio, toserv_rio;
   HttpRequest request;
+  char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+  char host[MAXLINE], path[MAXLINE];
+  int port, toserverfd, irespond;
+  char toserverport[MAXLINE];
+  char toserverreq[MAXLINE];
 
   /* client ---(request)---> (connfd)proxy server */
   /* 클라이언트에서 프록시 서버로 요청 */
@@ -153,6 +163,22 @@ void proxy(int connfd)
   forward_http_request(connfd, &request);
 }
 
+
+
+void *proxy_thread(void *vargp) {
+  int connfd = *((int *)(vargp));
+  /* 
+   * 스레드가 종료되면 스택에서 썼던 걸(공유자원이 아닌 것) 반납
+   * 바로 삭제가 아니고, 종료될 때 까지 기다림! 
+   */
+  pthread_detach(pthread_self());
+  free(vargp);
+
+  proxy(connfd);
+  close(connfd);
+  return NULL;
+}
+
 /* 
  * uri -> host(IP), port, path 파싱
  */
@@ -168,7 +194,7 @@ int parse_uri(const char *uri, int *port, char *hostname, char *pathname)
    */
   if (strchr(url, ':'))
   {
-    sscanf(url, "%[^:]:%i%s", hostname, port, pathname); // 정규 표현식으로 ':'으로 구분된 지점을 나누어 hostname, port, pathname 파싱
+    sscanf(url, "%[^:]:%i%s", hostname, port, pathname); // 정규 표현식으로 ':'으로 구분된 지점을 나누어 hostname, port, pathname 구함
   }
   else
   {
@@ -298,21 +324,7 @@ void forward_http_request(int connfd, HttpRequest *request)
   rio_t toserver_rio;
   debug_printf("Request to server: \n---------\n%s", request->content); /* ifndef DEBUG */
 
-  /*
-   * If the cache has the request's response,
-   * just write it back to connfd.
-   * If not , to proxy ---> server, server--->proxy,proxy--->client.
-   * And put the new request-response into the cache.
-   */
-
-  /* if (cache_get(request->content, response_from_server)) {
-    debug_printf("Hit response in the cache!\n");
-    rio_writen(connfd, response_from_server, strlen(response_from_server));
-    return;
-  } */
-
   sprintf(port_str, "%d", request->port);
-  /* serverfd 식별자는 0, 1, 2, 3(listenfd), 4(connfd) 다음에 생성되므로, 5! */
   serverfd = open_clientfd(request->host, port_str);
   /* 에러 시 클라이언트 측에 메세지 출력 - socket 생성 실패 or getaddrinfo 실패 */
   if (serverfd == -1)
